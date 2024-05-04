@@ -6,6 +6,7 @@ from typing import NamedTuple
 from collections import namedtuple
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
+import jax.numpy as jnp
 
 #  Named tuples used in functions.
 #  compute_svd uses "SVD",
@@ -112,7 +113,7 @@ def compute_rank(X: np.ndarray, svd_rank: Number = 0) -> int:
     singular values is, IEEE Transactions on Information Theory 60.8
     (2014): 5040-5053.
     """
-    _, s, _ = np.linalg.svd(X, full_matrices=False)
+    _, s, _ = jnp.linalg.svd(X, full_matrices=False)
     return _compute_rank(s, X.shape[0], X.shape[1], svd_rank)
 
 
@@ -145,7 +146,7 @@ def compute_tlsq(
     if tlsq_rank == 0:
         return X, Y
 
-    V = np.linalg.svd(np.append(X, Y, axis=0), full_matrices=False)[-1]
+    V = jnp.linalg.svd(np.append(X, Y, axis=0), full_matrices=False)[-1]
     rank = min(tlsq_rank, V.shape[0])
     VV = V[:rank, :].conj().T.dot(V[:rank, :])
 
@@ -180,7 +181,7 @@ def compute_svd(
     singular values is, IEEE Transactions on Information Theory 60.8
     (2014): 5040-5053.
     """
-    U, s, V = np.linalg.svd(X, full_matrices=False)
+    U, s, V = jnp.linalg.svd(X, full_matrices=False)
     rank = _compute_rank(s, X.shape[0], X.shape[1], svd_rank)
     V = V.conj().T
 
@@ -255,12 +256,12 @@ def compute_rqb(
 
     # Perform power iterations.
     for _ in range(power_iters):
-        Q = np.linalg.qr(Y)[0]
-        Z = np.linalg.qr(X.conj().T.dot(Q))[0]
+        Q = jnp.linalg.qr(Y)[0]
+        Z = jnp.linalg.qr(X.conj().T.dot(Q))[0]
         Y = X.dot(Z)
 
     # Orthonormalize the sampling matrix.
-    Q = np.linalg.qr(Y)[0]
+    Q = jnp.linalg.qr(Y)[0]
 
     # Project the snapshot matrix onto the smaller space.
     B = Q.conj().T.dot(X)

@@ -3,6 +3,8 @@ import logging
 import numpy as np
 from scipy.linalg import sqrtm
 
+import jax.numpy as jnp
+
 from .utils import compute_svd
 
 logging.basicConfig(
@@ -77,14 +79,14 @@ class DMDOperator:
         U, s, V = compute_svd(X, self._svd_rank)
 
         if self._tikhonov_regularization is not None:
-            self._norm_X = np.linalg.norm(X)
+            self._norm_X = jnp.linalg.norm(X)
         atilde = self._least_square_operator(U, s, V, Y)
 
         if self._forward_backward:
             # b stands for "backward"
             bU, bs, bV = compute_svd(Y, svd_rank=len(s))
             atilde_back = self._least_square_operator(bU, bs, bV, X)
-            atilde = sqrtm(atilde.dot(np.linalg.inv(atilde_back)))
+            atilde = sqrtm(atilde.dot(jnp.linalg.inv(atilde_back)))
             if hasattr(np, "complex256") and atilde.dtype == np.complex256:
                 atilde = atilde.astype(np.complex128)
                 msg = "Casting atilde from np.complex256 to np.complex128"
@@ -173,7 +175,7 @@ class DMDOperator:
             s = (
                 s**2 + self._tikhonov_regularization * self._norm_X
             ) * np.reciprocal(s)
-        return np.linalg.multi_dot([U.T.conj(), Y, V]) * np.reciprocal(s)
+        return jnp.linalg.multi_dot([U.T.conj(), Y, V]) * np.reciprocal(s)
 
     def _compute_eigenquantities(self):
         """
@@ -200,7 +202,7 @@ class DMDOperator:
                 if item == 0:
                     factors_inv_sqrt[idx] = 0
 
-            Ahat = np.linalg.multi_dot(
+            Ahat = jnp.linalg.multi_dot(
                 [factors_inv_sqrt, self.as_numpy_array, factors_sqrt]
             )
         else:
@@ -210,7 +212,7 @@ class DMDOperator:
                 )
             )
 
-        self._eigenvalues, self._eigenvectors = np.linalg.eig(Ahat)
+        self._eigenvalues, self._eigenvectors = jnp.linalg.eig(Ahat)
 
         if self._sorted_eigs is not False and self._sorted_eigs is not None:
             if self._sorted_eigs == "abs":
