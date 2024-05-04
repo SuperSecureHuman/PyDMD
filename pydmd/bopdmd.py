@@ -25,6 +25,8 @@ from .dmdoperator import DMDOperator
 from .snapshots import Snapshots
 from .utils import compute_rank, compute_svd
 
+import jax.numpy as jnp
+
 
 class BOPDMDOperator(DMDOperator):
     """
@@ -368,7 +370,7 @@ class BOPDMDOperator(DMDOperator):
         :return: Matrix A such that A[i, j] = exp(t_i * alpha_j).
         :rtype: numpy.ndarray
         """
-        return np.exp(np.outer(t, alpha))
+        return jnp.exp(np.outer(t, alpha))
 
     def _exp_function_deriv(self, alpha, t, i):
         """
@@ -387,7 +389,7 @@ class BOPDMDOperator(DMDOperator):
         n = len(alpha)
         if i < 0 or i > n - 1:
             raise ValueError("Invalid index i given to exp_function_deriv.")
-        A = np.multiply(t, np.exp(alpha[i] * t))
+        A = jnp.multiply(t, jnp.exp(alpha[i] * t))
         return csr_matrix(
             (A, (np.arange(m), np.full(m, fill_value=i))), shape=(m, n)
         )
@@ -407,7 +409,7 @@ class BOPDMDOperator(DMDOperator):
         :return: irank truncated SVD of X.
         :rtype: numpy.ndarray, numpy.ndarray, numpy.ndarray
         """
-        U, s, Vh = np.linalg.svd(X, full_matrices=False)
+        U, s, Vh = jnp.linalg.svd(X, full_matrices=False)
         irank = np.sum(s > tolrank * s[0])
         U = U[:, :irank]
         S = np.diag(s[:irank])
@@ -560,9 +562,8 @@ class BOPDMDOperator(DMDOperator):
             Compute the current residual, objective, and relative error.
             """
             residual = H - Phi(alpha, t).dot(B)
-            objective = 0.5 * np.linalg.norm(residual, "fro") ** 2
-            error = np.linalg.norm(residual, "fro") / np.linalg.norm(H, "fro")
-
+            objective = 0.5 * jnp.linalg.norm(residual, "fro") ** 2
+            error = jnp.linalg.norm(residual, "fro") / jnp.linalg.norm(H, "fro")
             return residual, objective, error
 
         def compute_B(alpha):
@@ -570,8 +571,7 @@ class BOPDMDOperator(DMDOperator):
             Update B for the current alpha.
             """
             # Compute B using least squares.
-            B = np.linalg.lstsq(Phi(alpha, t), H, rcond=None)[0]
-
+            B = np.linalg.lstsq(Phi(alpha, t), H, rcond=None)[0]  # TODO: JAX
             # Apply proximal operator if given, and if data isn't projected.
             if self._mode_prox is not None and not self._use_proj:
                 B = self._mode_prox(B)
@@ -609,7 +609,7 @@ class BOPDMDOperator(DMDOperator):
 
                 # Compute the full expression for the Jacobian.
                 if use_fulljac:
-                    transform = np.linalg.multi_dot([U, np.linalg.inv(S), Vh])
+                    transform = jnp.linalg.multi_dot([U, jnp.linalg.inv(S), Vh])
                     dphit_res = csr_matrix(dphi_temp.conj().T @ residual)
                     djac_b = transform @ dphit_res
                     djac_matrix[:, i] += djac_b.ravel(order="F")
@@ -618,7 +618,7 @@ class BOPDMDOperator(DMDOperator):
                 scales[i] = 1
                 # Scale for the Levenberg-Marquardt algorithm.
                 if use_levmarq:
-                    scales[i] = min(np.linalg.norm(djac_matrix[:, i]), 1)
+                    scales[i] = min(jnp.linalg.norm(djac_matrix[:, i]), 1)
                     scales[i] = max(scales[i], 1e-6)
 
             # Loop to determine lambda (the step-size parameter).
@@ -642,7 +642,7 @@ class BOPDMDOperator(DMDOperator):
                 """
                 # Compute the step delta.
                 rjac[IA:] = _lambda * np.diag(scales_pvt)
-                delta = np.linalg.lstsq(rjac, rhs, rcond=None)[0]
+                delta = jnp.linalg.lstsq(rjac, rhs, rcond=None)[0]
                 delta = delta[ij_pvt]
 
                 # Compute the updated alpha vector.
@@ -660,7 +660,7 @@ class BOPDMDOperator(DMDOperator):
             actual_improvement = objective - objective_0
             pred_improvement = (
                 0.5
-                * np.linalg.multi_dot(
+                * jnp.linalg.multi_dot(
                     [delta_0.conj().T, djac_matrix.conj().T, rhs_temp]
                 )[0].real
             )
@@ -767,7 +767,7 @@ class BOPDMDOperator(DMDOperator):
 
         # Compute the projected propagator Atilde.
         if self._use_proj:
-            Atilde = np.linalg.multi_dot([w, np.diag(e), np.linalg.pinv(w)])
+            Atilde = jnp.linalg.multi_dot([w, np.diag(e), jnp.linalg.pinv(w)])
             # Unproject the dmd modes.
             w = self._proj_basis.dot(w)
             # Apply mode proximal operator if given.
@@ -775,13 +775,13 @@ class BOPDMDOperator(DMDOperator):
                 w = self._mode_prox(w)
         else:
             w_proj = self._proj_basis.conj().T.dot(w)
-            Atilde = np.linalg.multi_dot(
-                [w_proj, np.diag(e), np.linalg.pinv(w_proj)]
+            Atilde = jnp.linalg.multi_dot(
+                [w_proj, np.diag(e), jnp.linalg.pinv(w_proj)]
             )
 
         # Compute the full system matrix A.
         if self._compute_A:
-            A = np.linalg.multi_dot([w, np.diag(e), np.linalg.pinv(w)])
+            A = jnp.linalg.multi_dot([w, np.diag(e), jnp.linalg.pinv(w)])
         else:
             A = None
 
@@ -920,17 +920,17 @@ class BOPDMDOperator(DMDOperator):
 
         # Compute Atilde using the average optimized dmd results.
         w_proj = self._proj_basis.conj().T.dot(self._modes)
-        self._Atilde = np.linalg.multi_dot(
-            [w_proj, np.diag(self._eigenvalues), np.linalg.pinv(w_proj)]
+        self._Atilde = jnp.linalg.multi_dot(
+            [w_proj, np.diag(self._eigenvalues), jnp.linalg.pinv(w_proj)]
         )
 
         # Compute A if requested.
         if self._compute_A:
-            self._A = np.linalg.multi_dot(
+            self._A = jnp.linalg.multi_dot(
                 [
                     self._modes,
                     np.diag(self._eigenvalues),
-                    np.linalg.pinv(self._modes),
+                    jnp.linalg.pinv(self._modes),
                 ]
             )
 
@@ -1359,14 +1359,14 @@ class BOPDMD(DMDBase):
         # Define the matrices Y and Z as the following and compute the
         # rank-truncated SVD of Y.
         Y = (ux1 + ux2) / 2
-        Z = (ux2 - ux1).dot(np.linalg.inv(T))
+        Z = (ux2 - ux1).dot(jnp.linalg.inv(T))
         U, s, V = compute_svd(Y, self._svd_rank)
         S = np.diag(s)
 
         # Compute the matrix Atilde and return its eigenvalues.
-        Atilde = np.linalg.multi_dot([U.conj().T, Z, V, np.linalg.inv(S)])
+        Atilde = jnp.linalg.multi_dot([U.conj().T, Z, V, jnp.linalg.inv(S)])
 
-        return np.linalg.eig(Atilde)[0]
+        return jnp.linalg.eig(Atilde)[0]
 
     def fit(self, X, t):
         """
@@ -1488,7 +1488,7 @@ class BOPDMD(DMDBase):
                     self.operator.amplitudes_std,
                 )
                 # Compute forecast using average modes and eigs_k, b_k.
-                all_x[k] = np.linalg.multi_dot(
+                all_x[k] = jnp.linalg.multi_dot(
                     [self.modes, np.diag(b_k), np.exp(np.outer(eigs_k, t))]
                 )
 
@@ -1496,7 +1496,7 @@ class BOPDMD(DMDBase):
             return np.mean(all_x, axis=0), np.var(all_x, axis=0)
 
         # If no variance information, simply compute a standard forecast.
-        x = np.linalg.multi_dot(
+        x = jnp.linalg.multi_dot(
             [
                 self.modes,
                 np.diag(self.amplitudes),
